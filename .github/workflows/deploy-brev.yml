@@ -1,0 +1,47 @@
+name: Deploy to Brev
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: brev-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: https://qarqaraly-ldk7e3yol.gobrev.dev
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Deploy this commit
+        env:
+          DEPLOY_KEY: ${{ secrets.BREV_DEPLOY_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.BREV_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ vars.BREV_HOST }}
+          DEPLOY_PORT: ${{ vars.BREV_PORT }}
+          DEPLOY_USER: ${{ vars.BREV_USER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          key_dir=$(mktemp -d)
+          trap 'rm -rf "$key_dir"' EXIT
+          printf '%s\n' "$DEPLOY_KEY" > "$key_dir/key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$key_dir/known_hosts"
+          git archive --format=tar "$GITHUB_SHA" | gzip | ssh \
+            -i "$key_dir/key" -p "$DEPLOY_PORT" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$key_dir/known_hosts" \
+            -o ConnectTimeout=30 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
+            "$DEPLOY_USER@$DEPLOY_HOST" "deploy $GITHUB_SHA"

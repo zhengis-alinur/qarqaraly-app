@@ -90,3 +90,31 @@ Volumes сохраняются. Не запускайте `docker compose down -
 
 Документация подключения и публикации порта:
 https://docs.nvidia.com/brev/cli/connectivity
+
+## Автодеплой из GitHub
+
+Workflow `.github/workflows/deploy-brev.yml` запускается при пуше в `main`
+или вручную через Actions → Deploy to Brev → Run workflow (ветка `main`).
+Репозиторий: https://github.com/zhengis-alinur/qarqaraly-app
+
+GitHub-hosted runner передаёт архив конкретного коммита по SSH. На Brev
+`/home/ubuntu/qarqaraly-ci/receive` обновляет исходники, собирает образ и
+перезапускает приложение с ожиданием Docker healthcheck. Пока идёт сборка,
+предыдущая версия продолжает работать. При ошибке запуска выполняется попытка
+возврата предыдущего образа приложения; это не откат схемы/содержимого базы.
+Тесты отдельным этапом не запускаются.
+
+- Secrets: `BREV_DEPLOY_KEY`, `BREV_KNOWN_HOSTS`.
+- Variables: `BREV_HOST`, `BREV_PORT`, `BREV_USER`.
+- Ключ отдельный, с `restrict` и принудительной командой receive в
+  `/home/ubuntu/.ssh/authorized_keys`; интерактивный SSH им недоступен.
+- SSH host key закреплён по ключу, полученному через действующее подключение Brev.
+- `.env`, MongoDB и загруженные фотографии сохраняются на сервере.
+- Коммит последнего успешного деплоя: `/home/ubuntu/qarqaraly-ci/deployed-commit`.
+- Последовательность запусков обеспечивают Actions concurrency и серверный flock.
+
+Для обычного обновления достаточно `git push origin main`. Изменение файла
+`scripts/deploy/brev-receive.sh` в Git само по себе не обновляет установленный
+receive: его нужно установить через административное подключение Brev.
+После пересоздания VM или изменения SSH-порта обновите ключи/variables в GitHub.
+Не заменяйте проверку SSH host key на `StrictHostKeyChecking=no`.
