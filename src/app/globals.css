@@ -21,3 +21,34 @@
 @media(max-width:760px){.site-header .brand-image{width:210px}}
 @media(max-width:360px){.site-header .brand-image{width:185px}}
 
+
+/* Leave a preview of the categories below the first screen's introduction. */
+.hero{min-height:clamp(360px,calc(100svh - 310px),500px)}
+.hero-content{padding:32px 62px 58px}
+.hero-kicker{margin-bottom:14px}
+.hero h1{font-size:clamp(36px,4vw,56px);margin-bottom:16px}
+.hero p{margin-bottom:20px}
+.hero-bottom{bottom:18px}
+.categories-section{padding-top:24px}
+.categories-section .section-heading{margin-bottom:18px}
+.catalog-categories{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:28px}
+.catalog-category{display:inline-flex;align-items:center;gap:9px;min-height:44px;padding:10px 16px;border:1px solid var(--line);border-radius:24px;background:#fff;color:var(--green);font-size:12px;font-weight:650;line-height:1.4;transition:background .2s}
+.catalog-category svg{flex-shrink:0}
+.catalog-category:hover{background:#edf2e4}
+.catalog-category.selected{background:var(--green);border-color:var(--green);color:#fff}
+@media(max-width:1100px){.hero-content{padding-inline:42px}}
+@media(max-width:760px){
+  .hero{min-height:clamp(320px,calc(100svh - 260px),460px)}
+  .hero-content{padding:24px 20px 48px}
+  .hero-kicker{margin-bottom:12px}
+  .hero h1{font-size:clamp(32px,8.5vw,40px);letter-spacing:-1.5px;margin-bottom:14px}
+  .hero p{margin-bottom:16px}
+  .hero-suggestions{display:none}
+  .hero-bottom{left:20px;bottom:14px}
+  .categories-section{padding-top:18px}
+  .categories-section .eyebrow,.categories-section .heading-note{display:none}
+  .categories-section .section-heading{margin-bottom:14px}
+  .categories-section .section-heading h2{font-size:24px;margin-top:0}
+  .catalog-categories{gap:8px;margin-bottom:22px}
+  .catalog-category{padding:10px 12px;font-size:11px;gap:7px}
+}

@@ -1,5 +1,19 @@
 # Развёртывание на NVIDIA Brev
 
+## Текущее размещение
+
+- Сайт: https://qarqaraly-ldk7e3yol.gobrev.dev
+- VM: `married-harlequin-smelt`.
+- Каталог на сервере: `/home/ubuntu/qarqaraly`.
+- Вход: `brev shell married-harlequin-smelt`.
+- Перенесены существующие база и фотографии. Повторный seed не требуется.
+- SMTP пока не настроен: подтверждение email и восстановление пароля требуют
+  настройки почтового сервиса в серверном `.env` и `docker compose up -d app`.
+- Локальная копия базы перед переносом: `backups/brev-deploy/database.archive.gz`.
+  Она содержит данные пользователей; не публикуйте её и не добавляйте в Git.
+- После смены публичного адреса обновите `APP_URL` в серверном `.env` и
+  пересоздайте приложение командой `docker compose up -d app`.
+
 Используем существующий Dockerfile и compose.yaml: приложение на порту 3000,
 MongoDB во внутренней сети, фотографии и база в постоянных Docker volumes.
 
