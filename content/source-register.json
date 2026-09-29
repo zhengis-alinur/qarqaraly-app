@@ -1,0 +1,102 @@
+{
+  "shaitan": {
+    "label": "Visit Karaganda — озеро Шайтанколь",
+    "url": "https://visitkaraganda.kz/ru/services/498",
+    "accessedAt": "2026-09-30"
+  },
+  "basin": {
+    "label": "Visit Karaganda — озеро Бассейн",
+    "url": "https://visitkaraganda.kz/ru/services/745",
+    "accessedAt": "2026-09-30"
+  },
+  "mosque": {
+    "label": "Visit Karaganda — мечеть Кунанбая",
+    "url": "https://visitkaraganda.kz/ru/services/497",
+    "accessedAt": "2026-09-30"
+  },
+  "house": {
+    "label": "Visit Karaganda — дом Бекметьева",
+    "url": "https://visitkaraganda.kz/ru/services/756",
+    "accessedAt": "2026-09-30"
+  },
+  "forester": {
+    "label": "Visit Karaganda — Дом лесника",
+    "url": "https://visitkaraganda.kz/ru/services/755",
+    "accessedAt": "2026-09-30"
+  },
+  "museum": {
+    "label": "Visit Karaganda — историко-краеведческий музей",
+    "url": "https://visitkaraganda.kz/ru/services/796",
+    "accessedAt": "2026-09-30"
+  },
+  "nature": {
+    "label": "Visit Karaganda — музей природы",
+    "url": "https://visitkaraganda.kz/ru/services/797",
+    "accessedAt": "2026-09-30"
+  },
+  "kent": {
+    "label": "Visit Karaganda — Кентский массив",
+    "url": "https://visitkaraganda.kz/ru/services/742",
+    "accessedAt": "2026-09-30"
+  },
+  "settlement": {
+    "label": "Visit Karaganda — поселение Кент",
+    "url": "https://visitkaraganda.kz/ru/services/494",
+    "accessedAt": "2026-09-30"
+  },
+  "archaeology": {
+    "label": "Институт археологии — комплекс Кызылкеныш",
+    "url": "https://archaeology.kz/ru/heritages/124-qyzylkenish-eskertkishter-kesheni",
+    "accessedAt": "2026-09-30"
+  },
+  "history": {
+    "label": "Акимат Каркаралинского района — очерки истории",
+    "url": "https://www.gov.kz/memleket/entities/karaganda-karkaraly/press/article/details/26183",
+    "accessedAt": "2026-09-30"
+  },
+  "park": {
+    "label": "Каркаралинский национальный парк — общая информация",
+    "url": "https://www.karkaralinsk-park.ru/about_parks.php",
+    "accessedAt": "2026-09-30"
+  },
+  "bus": {
+    "label": "Автовокзал Караганды — направление Каркаралинск",
+    "url": "https://karaganda.avokzal.kz/расписание-автобусов/маршрут/karaganda-state-412",
+    "accessedAt": "2026-09-30"
+  },
+  "road": {
+    "label": "ҚазАвтоЖол — дорожная информация для водителей",
+    "url": "https://ru.qaj.kz/client/",
+    "accessedAt": "2026-09-30"
+  },
+  "weather": {
+    "label": "Казгидромет — штормовые предупреждения",
+    "url": "https://kazhydromet.kz/ru/storm",
+    "accessedAt": "2026-09-30"
+  },
+  "safety": {
+    "label": "ДЧС — памятка туристу в горах",
+    "url": "https://www.gov.kz/memleket/entities/emer-almaty/press/news/details/1042441?lang=ru",
+    "accessedAt": "2026-09-30"
+  },
+  "groups": {
+    "label": "Управление туризма — организация групповых посещений парка",
+    "url": "https://www.gov.kz/memleket/entities/karaganda-kasipkerlik/documents/details/1038060?lang=ru",
+    "accessedAt": "2026-09-30"
+  },
+  "stay": {
+    "label": "Visit Karaganda — каталог зон отдыха",
+    "url": "https://www.visitkaraganda.kz/ru/resorts",
+    "accessedAt": "2026-09-30"
+  },
+  "food": {
+    "label": "Акимат области — фестиваль BaiQymyz в Каркаралинске",
+    "url": "https://www.gov.kz/memleket/entities/karaganda/press/news/details/1235928?lang=ru",
+    "accessedAt": "2026-09-30"
+  },
+  "region": {
+    "label": "Kazakhstan Travel — Карагандинская область",
+    "url": "https://www.kazakhstan.travel/ru/regions/karagandy-province",
+    "accessedAt": "2026-09-30"
+  }
+}

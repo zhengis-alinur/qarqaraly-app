@@ -1,0 +1,53 @@
+services:
+  app:
+    build:
+      context: .
+      target: production
+      args:
+        NEXT_PUBLIC_TILE_URL: "${NEXT_PUBLIC_TILE_URL:-https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png}"
+        NEXT_PUBLIC_TILE_ATTRIBUTION: "${NEXT_PUBLIC_TILE_ATTRIBUTION:-© OpenStreetMap contributors}"
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    env_file: .env
+    environment:
+      MONGODB_URI: mongodb://mongo:27017/qarqaraly
+      UPLOAD_DIR: /app/uploads
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+  mongo:
+    image: mongo:8.0
+    volumes:
+      - mongodb:/data/db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+  tools:
+    profiles: ["tools"]
+    build:
+      context: .
+      target: tools
+    env_file: .env
+    environment:
+      MONGODB_URI: mongodb://mongo:27017/qarqaraly
+      UPLOAD_DIR: /app/uploads
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      mongo:
+        condition: service_healthy
+volumes:
+  mongodb:
+  uploads:
