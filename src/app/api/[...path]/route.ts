@@ -7,7 +7,8 @@ import bcrypt from 'bcryptjs';
 import sharp from 'sharp';
 import { z } from 'zod';
 import { db } from '@/lib/db';
-import { requireUser, session, limit, hash, sendToken } from '@/lib/auth';
+import { requireUser, session, limit, hash, sendToken, errorStatus } from '@/lib/auth';
+import { normalizePhone, sendPhoneCode, verifyPhoneCode, phoneFromToken } from '@/lib/phone';
 import { listingSchema, articleSchema } from '@/lib/validation';
 import type { Listing, User, Article, Taxonomy } from '@/lib/types';
 export const runtime='nodejs';
@@ -54,6 +55,36 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
     else await users.updateOne({_id:record.userId},{$set:{verified:true}});
     return ok();
    }
+   if(parts[1]==='phone') {
+    const phone=normalizePhone(body.phone);
+    if(parts[2]==='send-code')return ok(await sendPhoneCode(phone,ip,z.enum(['signup','login','reset']).parse(body.purpose)));
+    if(parts[2]==='verify-code')return ok({token:await verifyPhoneCode(phone,z.string().regex(/^\d{6}$/,'Код состоит из шести цифр').parse(body.code))});
+    // Вход по номеру и паролю: постоянным пользователям не нужна SMS при каждом входе.
+    if(parts[2]==='password') {
+     const password=z.string().min(10).max(72).parse(body.password);await limit(`phone-password:${phone}`,10,900);const user=await users.findOne({phone});
+     if(!user||!user.passwordHash||!await bcrypt.compare(password,user.passwordHash))return fail('Неверный номер или пароль');
+     await session(user);return ok({redirect:user.role==='admin'?'/admin':'/dashboard'});
+    }
+    return fail('Не найдено',404);
+   }
+   // Токен ниже доказывает владение номером: его выдаёт phone/verify-code и живёт десять минут.
+   if(['phone-register','phone-login','phone-reset'].includes(parts[1])) {
+    const phone=await phoneFromToken(body.token);const account=await users.findOne({phone});
+    if(parts[1]==='phone-register') {
+     if(account)return fail('Этот номер уже зарегистрирован. Войдите или восстановите пароль.');
+     const password=z.string().min(10).max(72).parse(body.password);
+     // Номер подтверждён кодом, поэтому аккаунт сразу может отправлять объекты на модерацию.
+     const user:User={_id:randomUUID(),phone,passwordHash:await bcrypt.hash(password,12),role:'business',verified:true,sessionVersion:0};
+     await users.insertOne(user);await session(user);return ok({redirect:'/dashboard'});
+    }
+    if(!account)return fail('Аккаунт с этим номером не найден. Сначала зарегистрируйтесь.');
+    if(parts[1]==='phone-reset') {
+     const password=z.string().min(10).max(72).parse(body.password);
+     await users.updateOne({_id:account._id},{$set:{passwordHash:await bcrypt.hash(password,12)},$inc:{sessionVersion:1}});
+     return ok({message:'Пароль изменён. Войдите с новым паролем.'});
+    }
+    await session(account);return ok({redirect:account.role==='admin'?'/admin':'/dashboard'});
+   }
    const email=z.email().max(254).parse(body.email).toLowerCase();await limit(`email:${email}`,10,900);
    const existing=await users.findOne({email});
    if(parts[1]==='forgot'||parts[1]==='resend') {if(existing&&(parts[1]==='forgot'||!existing.verified))await sendToken(existing,parts[1]==='forgot'?'reset':'verify');return ok({message:'Если аккаунт существует, письмо отправлено. Проверьте почту.'});}
@@ -95,12 +126,12 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
    if(!existing)return fail('Объект не найден',404);
    const match={_id:existing._id,revision:body.revision};
    let update:Record<string,unknown>={updatedAt:now};
-   if(action==='submit'){if(!user.verified)return fail('Подтвердите email перед отправкой на проверку');listingSchema.parse(existing.draft);update={...update,status:'pending',feedback:''};}
+   if(action==='submit'){if(!user.verified)return fail('Подтвердите email или номер телефона перед отправкой на проверку');listingSchema.parse(existing.draft);update={...update,status:'pending',feedback:''};}
    else if(action==='archive')update={...update,status:'archived',published:null};
    else if(action==='confirm'){if(!existing.published)return fail('Сначала опубликуйте объект');update={confirmedAt:now};}
    else if(['approve','reject','owner'].includes(action)) {
     if(user.role!=='admin')return fail('Нет доступа',403);
-    if(action==='owner') {const owner=await users.findOne({email:z.email().parse(body.email).toLowerCase()});if(!owner)return fail('Пользователь не найден');update={...update,ownerId:owner._id};}
+    if(action==='owner') {const contact=z.string().trim().min(3).parse(body.email);const owner=await users.findOne(contact.includes('@')?{email:z.email().parse(contact).toLowerCase()}:{phone:normalizePhone(contact)});if(!owner)return fail('Пользователь не найден');update={...update,ownerId:owner._id};}
     else {
      if(action==='approve'&&existing.status!=='pending')return fail('Карточка не находится на проверке');
      if(action==='approve'){listingSchema.parse(existing.draft);update={...update,published:existing.draft,status:'published',feedback:''};}
@@ -128,6 +159,7 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
  }catch(error){
   if(error instanceof z.ZodError)return fail('Проверьте поля формы: '+error.issues.map(i=>`${i.path.join('.')}: ${i.message}`).join('; '));
   const message=error instanceof Error?error.message:'';
+  const status=errorStatus(error);if(status&&message)return fail(message,status);
   if(message==='AUTH')return fail('Войдите в аккаунт',401);if(message==='FORBIDDEN')return fail('Нет доступа',403);
   if(message.startsWith('Слишком много'))return fail(message,429);
   console.error('API request failed',error instanceof Error?error.name:'unknown');return fail('Не удалось выполнить запрос. Попробуйте ещё раз.',500);

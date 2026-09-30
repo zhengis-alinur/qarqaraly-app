@@ -7,7 +7,9 @@ export type ListingData = {
 };
 export type Listing = { _id: string; slug: string; ownerId: string; draft: ListingData; published: ListingData | null; status: Status; feedback: string; confirmedAt: string | null; updatedAt: string; createdAt: string; revision: number; demo?: boolean };
 export type PublicListing = ListingData & { id: string; slug: string; confirmedAt: string | null; updatedAt: string; demo?: boolean };
-export type User = { _id: string; email: string; passwordHash: string; role: 'business' | 'admin'; verified: boolean; sessionVersion: number };
+export type User = { _id: string; email?: string; phone?: string; passwordHash: string; role: 'business' | 'admin'; verified: boolean; sessionVersion: number };
+// Одноразовый SMS-код: сам код не хранится, только HMAC. Строки одновременно служат журналом лимитов «сколько кодов запросил номер или IP за час».
+export type Otp = { _id: string; phone: string; ip: string; codeHash: string; attempts: number; expiresAt: Date; consumedAt: Date | null; createdAt: Date };
 export type Taxonomy = { _id: string; name: string; kind: 'category' | 'amenity'; order: number };
 export type ArticleSource = { label: string; url: string };
 export type PhotoCredit = { caption: string; author: string; source: string; license: string; licenseUrl: string; changes: string };
