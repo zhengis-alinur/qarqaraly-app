@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "admin:create": "node --env-file=.env --import tsx scripts/create-admin.ts",
     "seed:demo": "node --env-file=.env --import tsx scripts/seed.ts",
-    "seed:editorial": "node --env-file=.env --import tsx scripts/seed-editorial.ts"
+    "seed:editorial": "node --env-file=.env --import tsx scripts/seed-editorial.ts",
+    "telegram:webhook": "node --env-file=.env --import tsx scripts/telegram-webhook.ts"
   },
   "keywords": [],
   "author": "",

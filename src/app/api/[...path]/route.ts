@@ -10,15 +10,57 @@ import { db } from '@/lib/db';
 import { requireUser, session, limit, hash, errorStatus } from '@/lib/auth';
 import { normalizePhone, sendPhoneCode, verifyPhoneCode, phoneFromToken } from '@/lib/phone';
 import { listingSchema, articleSchema } from '@/lib/validation';
-import { notifyTelegram } from '@/lib/notify';
-import type { Listing, User, Article, Taxonomy } from '@/lib/types';
+import { notifyTelegram, answerCallback, editMessage, type Button } from '@/lib/notify';
+import { statusLabels, type Listing, type User, type Article, type Taxonomy } from '@/lib/types';
 export const runtime='nodejs';
 const ok=(data:unknown={ok:true})=>NextResponse.json(data);
 const fail=(message:string,status=400)=>NextResponse.json({error:message},{status});
+/**
+ * Вебхук Telegram: кнопки «Одобрить» и «Отклонить» под уведомлением о новой заявке.
+ * Origin здесь отсутствует и cookie не используются, поэтому подлинность подтверждает секретный
+ * заголовок, о котором мы договорились в setWebhook (scripts/telegram-webhook.ts), плюс совпадение
+ * чата с TELEGRAM_CHAT_ID. Те же действия доступны в /admin — логика публикации совпадает с ней.
+ */
+async function telegramWebhook(req:NextRequest) {
+ const secret=process.env.TELEGRAM_WEBHOOK_SECRET;
+ if(!secret||req.headers.get('x-telegram-bot-api-secret-token')!==secret)return fail('Нет доступа',403);
+ const update=await req.json().catch(()=>null) as {callback_query?:{id:string;data?:string;from?:{id:number;first_name?:string};message?:{message_id:number;text?:string;chat:{id:number}}}}|null;
+ const query=update?.callback_query;
+ if(!query?.data||!query.message)return ok({skipped:true});
+ if(String(query.message.chat.id)!==String(process.env.TELEGRAM_CHAT_ID||'')){console.warn('Telegram: нажатие из чужого чата');return ok({skipped:true});}
+ const [action,id]=query.data.split(':');
+ const database=await db(),listings=database.collection<Listing>('listings');
+ const listing=id?await listings.findOne({_id:id}):null;
+ const now=new Date().toISOString();
+ let answer='',outcome='';
+ if(!listing) answer='Заявка не найдена';
+ else if(listing.status!=='pending') answer=`Заявка уже обработана: ${statusLabels[listing.status]}`;
+ else if(action==='approve') {
+  const valid=listingSchema.safeParse(listing.draft);
+  if(!valid.success) answer='Карточка не проходит проверку — откройте админку';
+  else {
+   const result=await listings.updateOne({_id:listing._id,revision:listing.revision},{$set:{published:listing.draft,status:'published',feedback:'',updatedAt:now},$inc:{revision:1}});
+   if(!result.matchedCount) answer='Карточка изменилась, обновите и повторите';
+   else {answer='Опубликовано';outcome='✅ Опубликовано';}
+  }
+ }
+ else if(action==='reject') {
+  const feedback='Отклонено модератором. Свяжитесь с нами, чтобы уточнить, что поправить.';
+  const result=await listings.updateOne({_id:listing._id,revision:listing.revision},{$set:{status:'changes',feedback,updatedAt:now},$inc:{revision:1}});
+  if(!result.matchedCount) answer='Карточка изменилась, обновите и повторите';
+  else {answer='Отклонено';outcome='✋ Отклонено — владельцу показана просьба связаться с нами';}
+ }
+ else answer='Неизвестное действие';
+ if(listing&&outcome) await database.collection('revisions').insertOne({listingId:listing._id,data:listing.draft,previous:listing.published,result:action,comment:action==='reject'?'Отклонено из Telegram':'',moderatorId:`telegram:${query.from?.id??'?'}`,createdAt:now});
+ await answerCallback(query.id,answer);
+ if(outcome) await editMessage(query.message.chat.id,query.message.message_id,`${query.message.text||''}\n\n${outcome}`);
+ return ok();
+}
 async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}) {
  try {
   const parts=(await params).path, route=parts.join('/'), method=req.method;
   if(route==='health'&&method==='GET'){await (await db()).command({ping:1});return ok({status:'ok'});}
+  if(route==='telegram'&&method==='POST')return telegramWebhook(req);
   if(method==='POST') {
    const origin=req.headers.get('origin');
    if(origin!==new URL(process.env.APP_URL||req.url).origin)return fail('Недопустимый источник запроса',403);
@@ -130,7 +172,13 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
    const result=await listings.updateOne(match,{$set:update,$inc:{revision:1}});if(!result.matchedCount)return fail('Карточка уже изменена. Обновите страницу.',409);
    if(['approve','reject'].includes(action))await database.collection('revisions').insertOne({listingId:existing._id,data:existing.draft,previous:existing.published,result:action,comment:body.feedback||'',moderatorId:user._id,createdAt:now});
    // Уведомление модератору. notifyTelegram не бросает исключений: сбой отправки не отменяет заявку.
-   if(action==='submit')await notifyTelegram(`Новая заявка на модерацию\n\n${existing.draft.title}\nКатегория: ${existing.draft.category}\nАдрес: ${existing.draft.address||'—'}\nКонтакт владельца: ${user.phone||user.email||'—'}\nТелефон в карточке: ${existing.draft.phone||'—'}\nЗаявка: ${existing._id.slice(0,8)}\n\n${process.env.APP_URL||'http://localhost:3000'}/admin`);
+   if(action==='submit') {
+    const site=process.env.APP_URL||'';
+    // Кнопку-ссылку Telegram принимает только для публичного http(s)-адреса: на localhost он отвергает всё сообщение.
+    const buttons:Button[][]=[[{text:'✅ Опубликовать',callback_data:`approve:${existing._id}`},{text:'✋ Отклонить',callback_data:`reject:${existing._id}`}]];
+    if(/^https?:\/\//.test(site)&&!/localhost|127\.0\.0\.1|\[::1\]/.test(site))buttons.push([{text:'Открыть в админке',url:`${site}/admin`}]);
+    await notifyTelegram(`Новая заявка на модерацию\n\n${existing.draft.title}\nКатегория: ${existing.draft.category}\nАдрес: ${existing.draft.address||'—'}\nКонтакт владельца: ${user.phone||user.email||'—'}\nТелефон в карточке: ${existing.draft.phone||'—'}\nЗаявка: ${existing._id.slice(0,8)}`,buttons);
+   }
    return ok();
   }
   if(user.role!=='admin')return fail('Нет доступа',403);
