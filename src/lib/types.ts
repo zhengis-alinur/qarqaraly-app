@@ -5,7 +5,9 @@ export type ListingData = {
  priceUnit: string; amenities: string[]; phone: string; whatsapp: string; website: string;
  social: string; conditions: string; hours: string; lat: number | null; lng: number | null; photos: Photo[];
 };
-export type Listing = { _id: string; slug: string; ownerId: string; draft: ListingData; published: ListingData | null; status: Status; feedback: string; confirmedAt: string | null; updatedAt: string; createdAt: string; revision: number; demo?: boolean };
+// Заявленная владельцем оплата: подтверждения от банка нет, поступление сверяется по выписке.
+export type PaymentClaim = { payerName: string; amount: number | null; method: string; claimedAt: string };
+export type Listing = { _id: string; slug: string; ownerId: string; draft: ListingData; published: ListingData | null; status: Status; feedback: string; confirmedAt: string | null; updatedAt: string; createdAt: string; revision: number; demo?: boolean; payment?: PaymentClaim };
 export type PublicListing = ListingData & { id: string; slug: string; confirmedAt: string | null; updatedAt: string; demo?: boolean };
 export type User = { _id: string; email?: string; phone?: string; passwordHash: string; role: 'business' | 'admin'; verified: boolean; sessionVersion: number };
 // Одноразовый SMS-код: сам код не хранится, только HMAC. Строки одновременно служат журналом лимитов «сколько кодов запросил номер или IP за час».

@@ -10,6 +10,8 @@ import { db } from '@/lib/db';
 import { requireUser, session, limit, hash, errorStatus } from '@/lib/auth';
 import { normalizePhone, sendPhoneCode, verifyPhoneCode, phoneFromToken } from '@/lib/phone';
 import { listingSchema, articleSchema } from '@/lib/validation';
+import { applyCategoryRules } from '@/lib/categories';
+import { payment as paymentConfig } from '@/lib/payment';
 import { notifyTelegram, answerCallback, editMessage, type Button } from '@/lib/notify';
 import { statusLabels, type Listing, type User, type Article, type Taxonomy } from '@/lib/types';
 export const runtime='nodejs';
@@ -148,7 +150,8 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
    if(id!=='new'&&(!existing||(existing.ownerId!==user._id&&user.role!=='admin')))return fail('Объект не найден',404);
    const now=new Date().toISOString();
    if(action==='save') {
-    const data=listingSchema.parse(body.data);const tax=await database.collection<Taxonomy>('taxonomy').find().toArray();
+    // Поля, которых у категории нет, не должны доезжать до каталога, даже если их прислал старый клиент.
+    const data=applyCategoryRules(listingSchema.parse(body.data));const tax=await database.collection<Taxonomy>('taxonomy').find().toArray();
     if(!tax.some(t=>t.kind==='category'&&t._id===data.category)||data.amenities.some(a=>!tax.some(t=>t.kind==='amenity'&&t.name===a)))return fail('Проверьте категорию и удобства');
     for(const photo of data.photos)if(!await database.collection('photos').findOne({url:photo.url,...(user.role==='admin'?{}:{ownerId:user._id})})&&!existing?.draft.photos.some(p=>p.url===photo.url))return fail('Недоступное фото',403);
     if(existing){const result=await listings.updateOne({_id:existing._id,revision:body.revision},{$set:{draft:data,status:'draft',feedback:'',updatedAt:now},$inc:{revision:1}});if(!result.matchedCount)return fail('Карточка уже изменена. Обновите страницу.',409);return ok({id:existing._id,revision:existing.revision+1});}
@@ -157,7 +160,17 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
    if(!existing)return fail('Объект не найден',404);
    const match={_id:existing._id,revision:body.revision};
    let update:Record<string,unknown>={updatedAt:now};
-   if(action==='submit'){if(!user.verified)return fail('Подтвердите email или номер телефона перед отправкой на проверку');listingSchema.parse(existing.draft);update={...update,status:'pending',feedback:''};}
+   if(action==='paid') {
+    // Оплата со слов владельца: банк сайту ничего не подтверждает, поступление сверяется по выписке.
+    const payerName=z.string().trim().min(3).max(120).parse(body.payerName);
+    update={...update,payment:{payerName,amount:paymentConfig().amount,method:'Halyk (статический QR)',claimedAt:now}};
+   }
+   else if(action==='submit') {
+    if(!user.verified)return fail('Подтвердите email или номер телефона перед отправкой на проверку');
+    const configured=Boolean(paymentConfig().qr||paymentConfig().link);
+    if(configured&&!existing.payment?.claimedAt&&user.role!=='admin')return fail('Сначала пройдите шаг оплаты и нажмите «Я оплатил»');
+    listingSchema.parse(existing.draft);update={...update,status:'pending',feedback:''};
+   }
    else if(action==='archive')update={...update,status:'archived',published:null};
    else if(action==='confirm'){if(!existing.published)return fail('Сначала опубликуйте объект');update={confirmedAt:now};}
    else if(['approve','reject','owner'].includes(action)) {
@@ -177,9 +190,12 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
     // Кнопку-ссылку Telegram принимает только для публичного http(s)-адреса: на localhost он отвергает всё сообщение.
     const buttons:Button[][]=[[{text:'✅ Опубликовать',callback_data:`approve:${existing._id}`},{text:'✋ Отклонить',callback_data:`reject:${existing._id}`}]];
     if(/^https?:\/\//.test(site)&&!/localhost|127\.0\.0\.1|\[::1\]/.test(site))buttons.push([{text:'Открыть в админке',url:`${site}/admin`}]);
-    await notifyTelegram(`Новая заявка на модерацию\n\n${existing.draft.title}\nКатегория: ${existing.draft.category}\nАдрес: ${existing.draft.address||'—'}\nКонтакт владельца: ${user.phone||user.email||'—'}\nТелефон в карточке: ${existing.draft.phone||'—'}\nЗаявка: ${existing._id.slice(0,8)}`,buttons);
+    const claim=existing.payment;
+    const paidBlock=claim?`\n\nОплата заявлена\nОт кого: ${claim.payerName}\nСумма: ${claim.amount?claim.amount.toLocaleString('ru-RU')+' ₸':'не указана'}\nБанк: ${claim.method}\nОтмечено: ${new Date(claim.claimedAt).toLocaleString('ru-RU',{timeZone:'Asia/Almaty'})}`:'\n\nОплата не отмечена';
+    const category=(await database.collection<Taxonomy>('taxonomy').findOne({_id:existing.draft.category}))?.name||existing.draft.category;
+    await notifyTelegram(`Новая заявка на модерацию\n\n${existing.draft.title}\nКатегория: ${category}\nАдрес: ${existing.draft.address||'—'}\nСтоимость: ${existing.draft.price!==null?existing.draft.price.toLocaleString('ru-RU')+' ₸ '+existing.draft.priceUnit:'не указана'}${paidBlock}\n\nКонтакт владельца: ${user.phone||user.email||'—'}\nТелефон в карточке: ${existing.draft.phone||'—'}\nЗаявка: ${existing._id.slice(0,8)}`,buttons);
    }
-   return ok();
+   return ok({revision:existing.revision+1});
   }
   if(user.role!=='admin')return fail('Нет доступа',403);
   if(route==='admin/taxonomy') {const data=z.object({id:z.string().regex(/^[a-z0-9-]{2,60}$/),name:z.string().trim().min(2).max(80),kind:z.enum(['category','amenity']),order:z.number().int().min(0).max(100)}).parse(body);const collection=database.collection<Taxonomy>('taxonomy');const previous=await collection.findOne({_id:data.id});
