@@ -18,8 +18,6 @@ export async function db() {
    database.collection('listings').createIndex({status:1,'published.category':1,'published.price':1,updatedAt:-1}),
    database.collection('listings').createIndex({ownerId:1}),
    database.collection('articles').createIndex({slug:1},{unique:true}),
-   database.collection('tokens').createIndex({hash:1},{unique:true}),
-   database.collection('tokens').createIndex({expiresAt:1},{expireAfterSeconds:0}),
    database.collection('limits').createIndex({expiresAt:1},{expireAfterSeconds:0}),
    database.collection('events').createIndex({listingId:1,createdAt:1}),
    database.collection('events').createIndex({dedupe:1},{unique:true}),

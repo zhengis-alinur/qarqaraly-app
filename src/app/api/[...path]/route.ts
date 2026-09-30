@@ -7,7 +7,7 @@ import bcrypt from 'bcryptjs';
 import sharp from 'sharp';
 import { z } from 'zod';
 import { db } from '@/lib/db';
-import { requireUser, session, limit, hash, sendToken, errorStatus } from '@/lib/auth';
+import { requireUser, session, limit, hash, errorStatus } from '@/lib/auth';
 import { normalizePhone, sendPhoneCode, verifyPhoneCode, phoneFromToken } from '@/lib/phone';
 import { listingSchema, articleSchema } from '@/lib/validation';
 import type { Listing, User, Article, Taxonomy } from '@/lib/types';
@@ -46,15 +46,6 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
   if(parts[0]==='auth') {
    if(parts[1]==='logout'){(await cookies()).delete('session');return ok();}
    await limit(`auth:${ip}`,60,900);
-   if(parts[1]==='verify'||parts[1]==='reset') {
-    const token=z.string().regex(/^[a-f0-9]{64}$/).parse(body.token);
-    const password=parts[1]==='reset'?z.string().min(10).max(72).parse(body.password):null;
-    const record=await database.collection('tokens').findOneAndUpdate({hash:hash(token),purpose:parts[1],used:false,expiresAt:{$gt:new Date()}},{$set:{used:true}},{returnDocument:'before'});
-    if(!record)return fail('Ссылка недействительна или срок её действия истёк');
-    if(password)await users.updateOne({_id:record.userId},{$set:{passwordHash:await bcrypt.hash(password,12)},$inc:{sessionVersion:1}});
-    else await users.updateOne({_id:record.userId},{$set:{verified:true}});
-    return ok();
-   }
    if(parts[1]==='phone') {
     const phone=normalizePhone(body.phone);
     if(parts[2]==='send-code')return ok(await sendPhoneCode(phone,ip,z.enum(['signup','login','reset']).parse(body.purpose)));
@@ -85,17 +76,14 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
     }
     await session(account);return ok({redirect:account.role==='admin'?'/admin':'/dashboard'});
    }
-   const email=z.email().max(254).parse(body.email).toLowerCase();await limit(`email:${email}`,10,900);
-   const existing=await users.findOne({email});
-   if(parts[1]==='forgot'||parts[1]==='resend') {if(existing&&(parts[1]==='forgot'||!existing.verified))await sendToken(existing,parts[1]==='forgot'?'reset':'verify');return ok({message:'Если аккаунт существует, письмо отправлено. Проверьте почту.'});}
-   const password=z.string().min(10).max(72).parse(body.password);
-   if(parts[1]==='register') {
-    if(existing)return fail('Этот email уже зарегистрирован. Войдите или восстановите пароль.');
-    const user:User={_id:randomUUID(),email,passwordHash:await bcrypt.hash(password,12),role:'business',verified:false,sessionVersion:0};await users.insertOne(user);
-    try{await sendToken(user,'verify');}catch{await session(user);return ok({redirect:'/dashboard',message:'Аккаунт создан. Почтовый сервис временно недоступен; запросите письмо повторно в кабинете.'});}
-    await session(user);return ok({redirect:'/dashboard'});
+   // Вход по email оставлен для администратора; аккаунты по почте через сайт больше не создаются.
+   if(parts[1]==='login') {
+    const email=z.email().max(254).parse(body.email).toLowerCase();await limit(`email:${email}`,10,900);
+    const password=z.string().min(10).max(72).parse(body.password);const existing=await users.findOne({email});
+    if(!existing||!await bcrypt.compare(password,existing.passwordHash))return fail('Неверный email или пароль');
+    await session(existing);return ok({redirect:existing.role==='admin'?'/admin':'/dashboard'});
    }
-   if(parts[1]==='login') {if(!existing||!await bcrypt.compare(password,existing.passwordHash))return fail('Неверный email или пароль');await session(existing);return ok({redirect:existing.role==='admin'?'/admin':'/dashboard'});}
+   return fail('Не найдено',404);
   }
   if(route==='report') {
    await limit(`report:${ip}`,10,3600);const data=z.object({slug:z.string().max(150),message:z.string().trim().min(10).max(2000)}).parse(body);
