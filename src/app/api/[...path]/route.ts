@@ -10,6 +10,7 @@ import { db } from '@/lib/db';
 import { requireUser, session, limit, hash, errorStatus } from '@/lib/auth';
 import { normalizePhone, sendPhoneCode, verifyPhoneCode, phoneFromToken } from '@/lib/phone';
 import { listingSchema, articleSchema } from '@/lib/validation';
+import { notifyTelegram } from '@/lib/notify';
 import type { Listing, User, Article, Taxonomy } from '@/lib/types';
 export const runtime='nodejs';
 const ok=(data:unknown={ok:true})=>NextResponse.json(data);
@@ -128,6 +129,8 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
    }else return fail('Неизвестное действие');
    const result=await listings.updateOne(match,{$set:update,$inc:{revision:1}});if(!result.matchedCount)return fail('Карточка уже изменена. Обновите страницу.',409);
    if(['approve','reject'].includes(action))await database.collection('revisions').insertOne({listingId:existing._id,data:existing.draft,previous:existing.published,result:action,comment:body.feedback||'',moderatorId:user._id,createdAt:now});
+   // Уведомление модератору. notifyTelegram не бросает исключений: сбой отправки не отменяет заявку.
+   if(action==='submit')await notifyTelegram(`Новая заявка на модерацию\n\n${existing.draft.title}\nКатегория: ${existing.draft.category}\nАдрес: ${existing.draft.address||'—'}\nКонтакт владельца: ${user.phone||user.email||'—'}\nТелефон в карточке: ${existing.draft.phone||'—'}\nЗаявка: ${existing._id.slice(0,8)}\n\n${process.env.APP_URL||'http://localhost:3000'}/admin`);
    return ok();
   }
   if(user.role!=='admin')return fail('Нет доступа',403);
