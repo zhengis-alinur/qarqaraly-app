@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Save, Send, Upload, Trash2, ArrowUp, ArrowRight, ArrowLeft, Check } from 'lucide-react';
 import { api } from '@/lib/client';
+import { isApproved } from '@/lib/listing-payment';
 import { categoryFields } from '@/lib/categories';
 import { emptyListing, statusLabels, type Listing, type ListingData, type PaymentClaim, type Taxonomy } from '@/lib/types';
 import type { PaymentConfig } from '@/lib/payment';
@@ -27,7 +28,8 @@ export default function ListingForm({listing,tax,verified,payment,claim}:{listin
  const point=useMemo<[number,number]|undefined>(()=>data.lat!==null&&data.lng!==null?[data.lat,data.lng]:undefined,[data.lat,data.lng]);
  const update=<K extends keyof ListingData>(key:K,value:ListingData[K])=>setData(old=>({...old,[key]:value}));
  const fields=categoryFields(data.category);
- const payable=Boolean(payment.qr||payment.link);
+ const approved=isApproved(listing);
+ const payable=Boolean(payment.qr||payment.link)&&!approved&&!paidAt;
  // Смена категории подтягивает единицу стоимости и очищает поля, которых у этой категории нет.
  function changeCategory(category:string) {
   const next=categoryFields(category);
@@ -35,7 +37,7 @@ export default function ListingForm({listing,tax,verified,payment,claim}:{listin
  }
  async function persist() {const result=await api(`listings/${id}/save`,{data,revision});setId(result.id);setRevision(result.revision);return result as {id:string;revision:number};}
  async function run(action:()=>Promise<void>) {setBusy(true);setError('');setMessage('');try{await action();}catch(problem){setError((problem as Error).message);}finally{setBusy(false);}}
- const saveDraft=()=>run(async()=>{const result=await persist();setMessage('Черновик сохранён. Для публикации пройдите шаг оплаты и отправьте заявку на проверку.');if(id==='new')router.replace(`/dashboard/${result.id}`);router.refresh();});
+ const saveDraft=()=>run(async()=>{const result=await persist();setMessage(payable?'Черновик сохранён. Для публикации пройдите шаг оплаты и отправьте заявку на проверку.':'Изменения сохранены. Отправьте их на проверку, когда будете готовы.');if(id==='new')router.replace(`/dashboard/${result.id}`);router.refresh();});
  const toPayment=(form:HTMLFormElement|null)=>{if(form&&!form.reportValidity())return;void run(async()=>{const result=await persist();if(id==='new')router.replace(`/dashboard/${result.id}`);setStep('pay');});};
  const markPaid=()=>run(async()=>{
   if(payer.trim().length<3){setError('Укажите, от кого поступит оплата');return;}
@@ -48,9 +50,10 @@ export default function ListingForm({listing,tax,verified,payment,claim}:{listin
  return <form onSubmit={e=>{e.preventDefault();void saveDraft();}} className="form-card">
   <div>
    <span className="eyebrow">{translate(listing?statusLabels[listing.status]:'НОВОЕ МЕСТО')}</span>
-   <h1 style={{fontSize:32,margin:'12px 0'}}>{translate("Расскажите о вашем объекте")}</h1>
+   <h1 style={{fontSize:32,margin:'12px 0'}}>{translate(listing?"Редактирование объекта":"Расскажите о вашем объекте")}</h1>
    <p className="form-help">{translate("Первая фотография станет обложкой. Изменения опубликованной карточки появятся после модерации.")}</p>
   </div>
+  {approved&&<div className="notice">{translate("Объект уже одобрен. Редактирование без повторной оплаты. Изменения появятся после проверки.")}</div>}
   {translate(payable&&<ol className="form-steps"><li className={step==='info'?'active':''}>{translate("1. Информация")}</li><li className={step==='pay'?'active':''}>{translate("2. Оплата")}</li></ol>)}
   {translate(listing?.feedback&&<div className="notice warning">{translate("Комментарий модератора: ")}{translate(listing.feedback)}</div>)}
   {translate(!verified&&<div className="notice warning">{translate("Черновик можно сохранить сейчас. Для отправки на проверку подтвердите номер телефона.")}</div>)}
@@ -61,7 +64,7 @@ export default function ListingForm({listing,tax,verified,payment,claim}:{listin
     <label className="full-width">{translate("Описание *")}<textarea value={data.description} onChange={e=>update('description',e.target.value)} required minLength={30} maxLength={10000} rows={6} placeholder={translate("Чем интересно ваше место и что ждёт гостей? Минимум 30 символов.")}/></label>
     <label className="full-width">{translate("Адрес *")}<input value={data.address} onChange={e=>update('address',e.target.value)} required minLength={3} maxLength={300}/></label>
     {translate(fields.price&&<><label>{translate("Стоимость, ₸")}<input type="number" min="0" max="100000000" value={data.price??''} onChange={e=>update('price',e.target.value===''?null:Number(e.target.value))} placeholder={translate("Не указана")}/><span className="form-help">{translate("Оставьте пустым, если цену нужно уточнять.")}</span></label>
-    <label>{translate("Единица стоимости")}<select value={data.priceUnit} onChange={e=>update('priceUnit',e.target.value)}>{translate(['за ночь','за человека','за час','за услугу'].map(u=><option key={u}>{translate(u)}</option>))}</select></label></>)}
+    <label>{translate("Единица стоимости")}<select value={data.priceUnit} onChange={e=>update('priceUnit',e.target.value)}>{translate(['за ночь','за человека','за час','за услугу'].map(u=><option key={u} value={u}>{translate(u)}</option>))}</select></label></>)}
    </div></section>
    <section className="form-section"><h2>{translate("Фотографии")}</h2><p>{translate("До 10 фотографий, JPG / PNG / WebP, до 10 МБ каждая.")}</p>
     <label className="file-input"><span><Upload size={16}/> {translate(uploading?'Загружаем фотографии…':'Выбрать фотографии')}</span><input type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={uploading||data.photos.length>=10} onChange={async e=>{const files=Array.from(e.target.files||[]);e.target.value='';if(data.photos.length+files.length>10){setError('Можно добавить не больше 10 фотографий');return;}setUploading(true);setError('');try{for(const file of files){if(file.size>10*1024*1024)throw new Error('Фотография превышает 10 МБ');const form=new FormData();form.set('file',file);const response=await fetch('/api/upload',{method:'POST',body:form});const result=await response.json();if(!response.ok)throw new Error(result.error);setData(old=>({...old,photos:[...old.photos,{url:result.url,caption:''}]}));}}catch(problem){setError((problem as Error).message);}finally{setUploading(false);}}}/></label>

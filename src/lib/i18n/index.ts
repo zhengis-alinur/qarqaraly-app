@@ -1,7 +1,7 @@
 import kk from './kk.json';
 export type Locale = 'ru' | 'kk';
 export const localeCookie = 'qarqaraly-locale';
-export const normalizeLocale = (value?: string): Locale => value === 'ru' ? 'ru' : 'kk';
+export const normalizeLocale = (value?: string): Locale => value === 'kk' ? 'kk' : 'ru';
 const dictionary: Record<string, string> = kk;
 /** Translate presentation strings only; unknown and user-authored content stays intact. */
 export function translator(locale: Locale) {

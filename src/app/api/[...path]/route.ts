@@ -1,3 +1,4 @@
+import { needsPayment, isApproved } from '@/lib/listing-payment';
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { randomUUID } from 'node:crypto';
@@ -41,7 +42,7 @@ async function telegramWebhook(req:NextRequest) {
   const valid=listingSchema.safeParse(listing.draft);
   if(!valid.success) answer='Карточка не проходит проверку — откройте админку';
   else {
-   const result=await listings.updateOne({_id:listing._id,revision:listing.revision},{$set:{published:listing.draft,status:'published',feedback:'',updatedAt:now},$inc:{revision:1}});
+   const result=await listings.updateOne({_id:listing._id,revision:listing.revision},{$set:{approvedAt:listing.approvedAt||now,published:listing.draft,status:'published',feedback:'',updatedAt:now},$inc:{revision:1}});
    if(!result.matchedCount) answer='Карточка изменилась, обновите и повторите';
    else {answer='Опубликовано';outcome='✅ Опубликовано';}
   }
@@ -168,17 +169,17 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
    else if(action==='submit') {
     if(!user.verified)return fail('Подтвердите email или номер телефона перед отправкой на проверку');
     const configured=Boolean(paymentConfig().qr||paymentConfig().link);
-    if(configured&&!existing.payment?.claimedAt&&user.role!=='admin')return fail('Сначала пройдите шаг оплаты и нажмите «Я оплатил»');
+    if(configured&&needsPayment(existing)&&user.role!=='admin')return fail('Сначала пройдите шаг оплаты и нажмите «Я оплатил»');
     listingSchema.parse(existing.draft);update={...update,status:'pending',feedback:''};
    }
-   else if(action==='archive')update={...update,status:'archived',published:null};
+   else if(action==='archive')update={...update,status:'archived',published:null,...(isApproved(existing)?{approvedAt:existing.approvedAt||now}:{})};
    else if(action==='confirm'){if(!existing.published)return fail('Сначала опубликуйте объект');update={confirmedAt:now};}
    else if(['approve','reject','owner'].includes(action)) {
     if(user.role!=='admin')return fail('Нет доступа',403);
     if(action==='owner') {const contact=z.string().trim().min(3).parse(body.email);const owner=await users.findOne(contact.includes('@')?{email:z.email().parse(contact).toLowerCase()}:{phone:normalizePhone(contact)});if(!owner)return fail('Пользователь не найден');update={...update,ownerId:owner._id};}
     else {
      if(action==='approve'&&existing.status!=='pending')return fail('Карточка не находится на проверке');
-     if(action==='approve'){listingSchema.parse(existing.draft);update={...update,published:existing.draft,status:'published',feedback:''};}
+     if(action==='approve'){listingSchema.parse(existing.draft);update={...update,approvedAt:existing.approvedAt||now,published:existing.draft,status:'published',feedback:''};}
      else update={...update,status:'changes',feedback:z.string().trim().min(3).max(2000).parse(body.feedback)};
     }
    }else return fail('Неизвестное действие');
