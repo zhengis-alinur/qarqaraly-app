@@ -52,3 +52,10 @@
   .catalog-categories{gap:8px;margin-bottom:22px}
   .catalog-category{padding:10px 12px;font-size:11px;gap:7px}
 }
+
+.language-switcher { display:flex; flex-shrink:0; gap:2px; border:1px solid #d9dfd6; border-radius:8px; padding:3px; }
+.language-switcher button { border:0; background:transparent; color:inherit; padding:6px; border-radius:5px; font:inherit; font-size:11px; font-weight:700; cursor:pointer; }
+.language-switcher button[aria-pressed="true"] { background:#234c3c; color:white; }
+.language-switcher button:focus-visible { outline:2px solid #234c3c; outline-offset:2px; }
+.language-switcher button:disabled { cursor:wait; opacity:.65; }
+@media(max-width:400px) { .header-actions { gap:6px; } .language-switcher button { padding:6px 4px; } }
