@@ -1,0 +1,22 @@
+.layout {
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 330px;
+  grid-template-areas:'gallery contact' 'content contact';
+  align-items:start;
+  gap:28px 35px;
+}
+.gallery { grid-area:gallery; min-width:0; }
+.content { grid-area:content; min-width:0; }
+.layout > .contact { grid-area:contact; }
+
+@media (max-width:1100px) {
+  .layout { grid-template-columns:minmax(0,1fr) 290px; column-gap:25px; }
+}
+
+@media (max-width:760px) {
+  .layout {
+    grid-template-columns:minmax(0,1fr);
+    grid-template-areas:'gallery' 'contact' 'content';
+    gap:24px;
+  }
+}
