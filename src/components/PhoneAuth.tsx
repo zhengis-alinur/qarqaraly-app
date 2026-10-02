@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/client';
+import PhoneInput from './PhoneInput';
+import { formatPhoneInput } from '@/lib/phone-input';
 const purposes:Record<string,string>={register:'signup',login:'login',forgot:'reset'};
 const endpoints:Record<string,string>={register:'auth/phone-register',login:'auth/phone-login',forgot:'auth/phone-reset'};
 const titles:Record<string,string>={login:'С возвращением',register:'Расскажите о своём месте',forgot:'Восстановить пароль'};
@@ -12,7 +14,7 @@ const titles:Record<string,string>={login:'С возвращением',register
 export default function PhoneAuth({mode}:{mode:string}) {const translate=useTranslator();
  const router=useRouter();
  const [step,setStep]=useState<'phone'|'code'|'password'|'done'>('phone');
- const [phone,setPhone]=useState('+7'),[code,setCode]=useState(''),[token,setToken]=useState(''),[byPassword,setByPassword]=useState(false);
+ const [phone,setPhone]=useState(''),[code,setCode]=useState(''),[token,setToken]=useState(''),[byPassword,setByPassword]=useState(false);
  const [error,setError]=useState(''),[message,setMessage]=useState(''),[busy,setBusy]=useState(false),[wait,setWait]=useState(0);
  useEffect(()=>{if(wait<=0)return;const timer=setTimeout(()=>setWait(wait-1),1000);return()=>clearTimeout(timer);},[wait]);
  const finish=(result:{redirect?:string;message?:string})=>{if(result.redirect){router.push(result.redirect);router.refresh();}else{setMessage(result.message||'Готово');setStep('done');}};
@@ -34,9 +36,9 @@ export default function PhoneAuth({mode}:{mode:string}) {const translate=useTran
  return <div className="auth-wrap"><form className="form-card" onSubmit={submit}>
   <span className="eyebrow">{translate("КАБИНЕТ МЕСТНОГО БИЗНЕСА")}</span>
   <div><h1>{translate(titles[mode])}</h1><p>{translate(mode==='register'?'Подтвердите номер телефона по SMS и создайте аккаунт.':mode==='forgot'?'Подтвердите номер телефона по SMS и задайте новый пароль.':'Войдите по номеру телефона.')}</p></div>
-  {translate(step==='phone'&&<label>{translate("Номер телефона")}<input name="phone" type="tel" inputMode="tel" autoComplete="tel" required value={phone} onChange={e=>setPhone(e.target.value)} maxLength={20} placeholder="+7 701 234 56 78"/></label>)}
+  {translate(step==='phone'&&<label>{translate("Номер телефона")}<PhoneInput name="phone" required value={phone} onValueChange={setPhone}/></label>)}
   {translate(step==='phone'&&byPassword&&<label>{translate("Пароль")}<input name="password" type="password" minLength={10} maxLength={72} required autoComplete="current-password" placeholder={translate("Не менее 10 символов")}/></label>)}
-  {translate(step==='code'&&<><p>{translate("Код отправлен на ")}{translate(phone)}{translate(". Он действует пять минут.")}</p><label>{translate("Код из SMS")}<input name="code" className="code-input" inputMode="numeric" autoComplete="one-time-code" pattern="\d{6}" required value={code} onChange={e=>setCode(e.target.value.replace(/\D/g,'').slice(0,6))} placeholder="______"/></label><div className="form-actions"><button type="button" className="button secondary small" disabled={busy||wait>0} onClick={resend}>{translate(wait>0?`Отправить повторно через ${wait} с`:'Отправить код повторно')}</button><button type="button" className="button secondary small" onClick={()=>{setStep('phone');setError('');}}>{translate("Изменить номер")}</button></div></>)}
+  {translate(step==='code'&&<><p>{translate("Код отправлен на ")}{formatPhoneInput(phone)}{translate(". Он действует пять минут.")}</p><label>{translate("Код из SMS")}<input name="code" className="code-input" inputMode="numeric" autoComplete="one-time-code" pattern="\d{6}" required value={code} onChange={e=>setCode(e.target.value.replace(/\D/g,'').slice(0,6))} placeholder="______"/></label><div className="form-actions"><button type="button" className="button secondary small" disabled={busy||wait>0} onClick={resend}>{translate(wait>0?`Отправить повторно через ${wait} с`:'Отправить код повторно')}</button><button type="button" className="button secondary small" onClick={()=>{setStep('phone');setError('');}}>{translate("Изменить номер")}</button></div></>)}
   {translate(step==='password'&&<label>{translate(mode==='forgot'?'Новый пароль':'Пароль')}<input name="password" type="password" minLength={10} maxLength={72} required autoComplete="new-password" placeholder={translate("Не менее 10 символов")}/></label>)}
   {translate(step==='password'&&mode==='register'&&<label className="checkbox"><input type="checkbox" required/><span>{translate("Я ознакомился с ")}<Link href="/privacy" target="_blank" style={{textDecoration:'underline'}}>{translate("политикой конфиденциальности")}</Link></span></label>)}
   {translate(error&&<p className="error-message" role="alert">{translate(error)}</p>)}

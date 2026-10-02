@@ -12,6 +12,7 @@ import { statusLabels, type Listing, type ListingData, type PaymentClaim, type T
 import type { PaymentConfig } from '@/lib/payment';
 import Payment, { amountLabel } from './Payment';
 import MapView from './MapView';
+import PhoneInput from './PhoneInput';
 import { useListingDraft } from './useListingDraft';
 /**
  * Заявка проходит три этапа: сведения, оплата и проверка перед отправкой. Отправить на проверку можно
@@ -102,8 +103,8 @@ export default function ListingForm({listing,tax,verified,payment,claim,userId}:
     <label>{translate("Время работы и сезонность")}<textarea value={data.hours} onChange={e=>update('hours',e.target.value)} maxLength={500} placeholder={translate("Дни и часы работы")}/></label>
    </div></section>)}
    <section className="form-section"><h2>{translate("Контакты")}</h2><div className="form-grid">
-    <label>{translate("Телефон")}<input type="tel" value={data.phone} onChange={e=>update('phone',e.target.value)} maxLength={30} placeholder="+7 …"/></label>
-    <label>WhatsApp<input type="tel" value={data.whatsapp} onChange={e=>update('whatsapp',e.target.value)} maxLength={30} placeholder={translate("Номер с кодом страны")}/></label>
+    <label>{translate("Телефон")}<PhoneInput value={data.phone} onValueChange={value=>update('phone',value)}/></label>
+    <label>WhatsApp<PhoneInput value={data.whatsapp} onValueChange={value=>update('whatsapp',value)}/></label>
     <label>{translate("Сайт")}<input type="url" maxLength={2000} value={data.website} onChange={e=>update('website',e.target.value)} placeholder="https://…"/></label>
     <label>{translate("Социальная сеть")}<input type="url" maxLength={2000} value={data.social} onChange={e=>update('social',e.target.value)} placeholder="https://…"/></label>
    </div></section>
