@@ -3,30 +3,30 @@ import { useTranslator } from '@/components/LocaleProvider';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Save, Send, Upload, Trash2, ArrowUp, ArrowRight, ArrowLeft, Check } from 'lucide-react';
+import { Save, Send, Upload, Trash2, ArrowUp, ArrowRight, ArrowLeft, Check, MapPin, CreditCard, ClipboardCheck } from 'lucide-react';
 import { api } from '@/lib/client';
 import { isApproved } from '@/lib/listing-payment';
 import { categoryFields } from '@/lib/categories';
-import { emptyListing, statusLabels, type Listing, type ListingData, type PaymentClaim, type Taxonomy } from '@/lib/types';
+import { listingSchema } from '@/lib/validation';
+import { statusLabels, type Listing, type ListingData, type PaymentClaim, type Taxonomy } from '@/lib/types';
 import type { PaymentConfig } from '@/lib/payment';
 import Payment, { amountLabel } from './Payment';
 import MapView from './MapView';
+import { useListingDraft } from './useListingDraft';
 /**
  * Заявка проходит три этапа: сведения, оплата и проверка перед отправкой. Отправить на проверку можно
  * только после того, как владелец подтвердил оплату кнопкой «Я оплатил» — это заявление с его слов,
  * подтверждения от банка сайт не получает. Состав полей первого шага зависит от категории.
  */
-export default function ListingForm({listing,tax,verified,payment,claim}:{listing?:Listing;tax:Taxonomy[];verified:boolean;payment:PaymentConfig;claim?:PaymentClaim}) {const translate=useTranslator();
+export default function ListingForm({listing,tax,verified,payment,claim,userId}:{userId:string;listing?:Listing;tax:Taxonomy[];verified:boolean;payment:PaymentConfig;claim?:PaymentClaim}) {const translate=useTranslator();
  const router=useRouter();
- const [data,setData]=useState<ListingData>(listing?.draft||emptyListing);
- const [id,setId]=useState(listing?._id||'new');
- const [revision,setRevision]=useState(listing?.revision||0);
  const [step,setStep]=useState<'info'|'pay'|'review'>('info');
  const stepHeading=useRef<HTMLHeadingElement>(null);
  const previousStep=useRef(step);
  const [payer,setPayer]=useState(claim?.payerName||'');
  const [paidAt,setPaidAt]=useState(claim?.claimedAt||'');
  const [busy,setBusy]=useState(false),[uploading,setUploading]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
+ const {data,setData,id,setRevision,persist,status:saveStatus,recovery,restore,keepServer}=useListingDraft(userId,listing,busy||uploading);
  const point=useMemo<[number,number]|undefined>(()=>data.lat!==null&&data.lng!==null?[data.lat,data.lng]:undefined,[data.lat,data.lng]);
  const update=<K extends keyof ListingData>(key:K,value:ListingData[K])=>setData(old=>({...old,[key]:value}));
  const fields=categoryFields(data.category);
@@ -44,10 +44,9 @@ export default function ListingForm({listing,tax,verified,payment,claim}:{listin
   const next=categoryFields(category);
   setData(old=>({...old,category,priceUnit:next.priceUnit,price:next.price?old.price:null,amenities:next.amenities?old.amenities:[],conditions:next.conditions?old.conditions:''}));
  }
- async function persist() {const result=await api(`listings/${id}/save`,{data,revision});setId(result.id);setRevision(result.revision);if(id==='new')window.history.replaceState(null,'',`/dashboard/${result.id}`);return result as {id:string;revision:number};}
  async function run(action:()=>Promise<void>) {setBusy(true);setError('');setMessage('');try{await action();}catch(problem){setError((problem as Error).message);}finally{setBusy(false);}}
  const saveDraft=()=>run(async()=>{await persist();setMessage(payable?'Черновик сохранён. Для публикации пройдите шаг оплаты и отправьте заявку на проверку.':'Изменения сохранены. Отправьте их на проверку, когда будете готовы.');});
- const continueFromInfo=(form:HTMLFormElement|null)=>{if(form&&!form.reportValidity())return;void run(async()=>{await persist();goToStep(payable?'pay':'review');});};
+ const continueFromInfo=(form:HTMLFormElement|null)=>{if(form&&!form.reportValidity())return;if(!listingSchema.safeParse(data).success){setError('Перед продолжением заполните обязательные поля и проверьте телефоны, ссылки и координаты.');return;}void run(async()=>{await persist();goToStep(payable?'pay':'review');});};
  const markPaid=()=>run(async()=>{
   if(payer.trim().length<3){setError('Укажите, от кого поступит оплата');return;}
   const result=await persist();
@@ -56,18 +55,31 @@ export default function ListingForm({listing,tax,verified,payment,claim}:{listin
   goToStep('review');
  });
  const submit=()=>run(async()=>{const result=await persist();await api(`listings/${result.id}/submit`,{revision:result.revision});router.push('/dashboard');router.refresh();});
- return <form onSubmit={e=>{e.preventDefault();if(!busy&&!uploading)void saveDraft();}} className="form-card listing-form">
+ return <form onSubmit={e=>{e.preventDefault();if(!busy&&!uploading)void saveDraft();}} className="form-card listing-form" noValidate>
+  <nav className="listing-stepbar" aria-label={translate("Этапы размещения")}>
+   <ol className="listing-steps">{steps.map((item,index)=>{
+    const Icon=index<stepIndex?Check:item.id==='info'?MapPin:item.id==='pay'?CreditCard:ClipboardCheck;
+    return <li key={item.id} className={step===item.id?'active':index<stepIndex?'completed':''}>
+     <button type="button" aria-label={translate(item.title)} title={translate(item.hint)} aria-current={step===item.id?'step':undefined} disabled={busy||uploading||index>stepIndex} onClick={()=>goToStep(item.id)}>
+      <span className="listing-step-icon" aria-hidden="true"><Icon size={21}/></span>
+      <strong>{translate(item.title)}</strong>
+     </button>
+    </li>;
+   })}</ol>
+  </nav>
+  <fieldset className="listing-fields" disabled={busy}>
   <div>
    <span className="eyebrow">{translate(listing?statusLabels[listing.status]:'НОВОЕ МЕСТО')}</span>
    <h1>{translate(listing?"Редактирование объекта":"Разместить объект")}</h1>
-   <p className="form-help">{translate("Заполните карточку, затем отправьте её на проверку. Все этапы — ниже.")}</p>
+   <p className="form-help">{translate("Черновик сохраняется автоматически, даже если заполнено только одно поле. Обязательные поля нужны для отправки на проверку.")}</p>
+   {saveStatus&&<p className="form-help" role="status" aria-live="polite">{translate(saveStatus)}</p>}
+   {recovery&&<div className="notice warning"><p>{translate("Есть несохранённый ввод с этого устройства. Карточка в аккаунте уже изменилась.")}</p><div className="form-actions"><button type="button" className="button secondary" onClick={restore}>{translate("Восстановить мой ввод")}</button><button type="button" className="button secondary" onClick={keepServer}>{translate("Оставить версию из аккаунта")}</button></div></div>}
   </div>
   {approved&&<div className="notice">{translate("Объект уже одобрен. Редактирование без повторной оплаты. Изменения появятся после проверки.")}</div>}
   {!approved&&<aside className="listing-price" aria-label={translate("Условия размещения")}>
    <div><span className="eyebrow">{translate("РАЗМЕЩЕНИЕ ПЛАТНОЕ")}</span><strong>{payment.amount?amountLabel(payment.amount):translate("Стоимость уточняется")}</strong><span>{translate("за размещение одного объекта")}</span></div>
    <div><p>{translate(paidAt?'Вы уже отметили оплату. Повторно платить не нужно — мы сверим поступление вручную.':'Оплата — после заполнения карточки. Сохранение черновика не требует оплаты.')}</p><p>{translate("Объект появится в каталоге после проверки оплаты и модерации.")}</p>{!payment.amount&&<p>{translate("Перед оплатой уточните стоимость у администрации.")}</p>}{payment.note&&<p>{translate(payment.note)}</p>}</div>
   </aside>}
-  <nav aria-label={translate("Этапы размещения")}><ol className="listing-steps">{steps.map((item,index)=><li key={item.id} className={step===item.id?'active':index<stepIndex?'completed':''}><button type="button" aria-current={step===item.id?'step':undefined} disabled={busy||uploading||index>stepIndex} onClick={()=>goToStep(item.id)}><span className="listing-step-number" aria-hidden="true">{index<stepIndex?<Check size={16}/>:index+1}</span><span><strong>{translate(item.title)}</strong><small>{translate(item.hint)}</small></span></button></li>)}</ol></nav>
   <h2 ref={stepHeading} tabIndex={-1} className="listing-step-heading"><span>{translate("Шаг")} {stepIndex+1} {translate("из")} {steps.length}</span>{translate(steps[stepIndex].title)}</h2>
   {translate(listing?.feedback&&<div className="notice warning">{translate("Комментарий модератора: ")}{translate(listing.feedback)}</div>)}
   {translate(!verified&&<div className="notice warning">{translate("Черновик можно сохранить сейчас. Для отправки на проверку подтвердите номер телефона.")}</div>)}
@@ -92,8 +104,8 @@ export default function ListingForm({listing,tax,verified,payment,claim}:{listin
    <section className="form-section"><h2>{translate("Контакты")}</h2><div className="form-grid">
     <label>{translate("Телефон")}<input type="tel" value={data.phone} onChange={e=>update('phone',e.target.value)} maxLength={30} placeholder="+7 …"/></label>
     <label>WhatsApp<input type="tel" value={data.whatsapp} onChange={e=>update('whatsapp',e.target.value)} maxLength={30} placeholder={translate("Номер с кодом страны")}/></label>
-    <label>{translate("Сайт")}<input type="url" value={data.website} onChange={e=>update('website',e.target.value)} placeholder="https://…"/></label>
-    <label>{translate("Социальная сеть")}<input type="url" value={data.social} onChange={e=>update('social',e.target.value)} placeholder="https://…"/></label>
+    <label>{translate("Сайт")}<input type="url" maxLength={2000} value={data.website} onChange={e=>update('website',e.target.value)} placeholder="https://…"/></label>
+    <label>{translate("Социальная сеть")}<input type="url" maxLength={2000} value={data.social} onChange={e=>update('social',e.target.value)} placeholder="https://…"/></label>
    </div></section>
    <section className="form-section form-map"><h2>{translate("Точка на карте")}</h2><p>{translate("Нажмите на карту или введите координаты вручную. Без координат объект будет доступен только в каталоге.")}</p>
     <div className="form-grid" style={{marginBottom:18}}><label>{translate("Широта")}<input type="number" min="-90" max="90" step="any" value={data.lat??''} onChange={e=>update('lat',e.target.value===''?null:Number(e.target.value))}/></label><label>{translate("Долгота")}<input type="number" min="-180" max="180" step="any" value={data.lng??''} onChange={e=>update('lng',e.target.value===''?null:Number(e.target.value))}/></label></div>
@@ -122,14 +134,17 @@ export default function ListingForm({listing,tax,verified,payment,claim}:{listin
    {!approved&&paidAt&&<div className="notice"><Check size={16}/> {translate("Оплата отмечена: ")}{payer}. {translate("Поступление денег проверит модератор.")}</div>}
    <p className="form-help">{translate("После отправки модератор проверит заявку. Статус и замечания появятся в разделе «Мои объекты».")}</p>
   </section>}
-  {translate(error&&<div role="alert" className="error-message">{translate(error)}</div>)}
-  {translate(message&&<div role="status" className="notice">{translate(message)}</div>)}
-  <div className="form-actions">
+  <div className="listing-actionbar">
+   {translate(error&&<div role="alert" className="error-message">{translate(error)}</div>)}
+   {translate(message&&<div role="status" className="notice">{translate(message)}</div>)}
+  <div className="form-actions listing-actions">
    {translate(step==='info'
-    ?<><button className="button secondary" disabled={busy||uploading} type="submit"><Save size={17}/>{translate(busy?'Сохраняем…':'Сохранить черновик')}</button>
+    ?<><button className="button secondary listing-save" disabled={busy||uploading} type="submit" aria-label={translate(busy?'Сохраняем…':'Сохранить черновик')} title={translate('Сохранить черновик')}><Save size={17}/><span>{translate(busy?'Сохраняем…':'Сохранить черновик')}</span></button>
       <button className="button" disabled={busy||uploading} type="button" onClick={e=>continueFromInfo(e.currentTarget.form)}>{translate(payable?'Далее — оплата':'Далее — проверка')}<ArrowRight size={17}/></button></>
     :<><button className="button secondary" disabled={busy} type="button" onClick={()=>goToStep(step==='review'&&!approved?'pay':'info')}><ArrowLeft size={17}/>{translate("Назад")}</button>
       {step==='pay'?(paidAt?<button className="button" disabled={busy} type="button" onClick={()=>goToStep('review')}>{translate("Далее — проверка")}<ArrowRight size={17}/></button>:<button className="button" disabled={busy||!paymentConfigured||payer.trim().length<3} type="button" onClick={markPaid}><Check size={17}/>{translate(busy?'Сохраняем…':'Я оплатил — проверить карточку')}</button>):<button className="button" disabled={busy||payable||!verified} type="button" onClick={submit}><Send size={17}/>{translate(busy?'Отправляем…':'Отправить на проверку')}</button>}</>)}
   </div>
+  </div>
+  </fieldset>
  </form>;
 }

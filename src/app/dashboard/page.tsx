@@ -9,6 +9,7 @@ import { ListingAction } from '@/components/DashboardActions';
 import { payment } from '@/lib/payment';
 import { needsPayment } from '@/lib/listing-payment';
 import { Empty } from '@/components/UI';
+import DraftRecovery from '@/components/DraftRecovery';
 
 export default async function Dashboard({searchParams}:{searchParams:Promise<{days?:string}>}) {
  const t=await getTranslator();
@@ -27,13 +28,14 @@ export default async function Dashboard({searchParams}:{searchParams:Promise<{da
  const hints:Record<string,string>={draft:'Черновик виден только вам. Завершите заполнение и отправьте на проверку.',pending:'Заявка на проверке. Мы сообщим о результате.',published:'Объект опубликован и доступен посетителям.',changes:'Исправьте замечания модератора и отправьте объект повторно.',archived:'Объект скрыт из каталога. Вы можете отправить его на публикацию снова.'};
  return <div className="container page owner-dashboard">
   <div className="dashboard-heading"><div><span className="eyebrow">{t('КАБИНЕТ БИЗНЕСА')}</span><h1>{t('Мои объекты')}</h1><p>{t('Управляйте карточками и следите за интересом посетителей.')}</p></div><Link className="button" href="/dashboard/new"><Plus size={19}/>{t('Добавить объект')}</Link></div>
+  <DraftRecovery userId={user._id}/>
   <section className="owner-list" aria-label={t('Мои объекты')}>
    {list.length?list.map(l=>{
     const reminder=Boolean(l.published&&(!l.confirmedAt||Date.now()-new Date(l.confirmedAt).getTime()>Number(process.env.CONFIRM_REMINDER_DAYS||30)*86400000));
     return <article className="owner-card" key={l._id}>
      <div className="owner-card-main">
-      <Link className="owner-photo" href={`/dashboard/${l._id}`} aria-label={`${t('Редактировать')}: ${l.draft.title}`}>{l.draft.photos[0]?<img src={l.draft.photos[0].url} alt=""/>:<ImageIcon size={30}/>}</Link>
-      <div className="owner-card-info"><span className={`status ${l.status}`}>{t(l.published&&l.status==='draft'?'Есть неопубликованные изменения':statusLabels[l.status])}</span><h2><Link href={`/dashboard/${l._id}`}>{l.draft.title}</Link></h2><p className="owner-address"><MapPin size={15}/>{l.draft.address}</p><p>{t(l.published&&l.status!=='published'?'Посетители видят ранее опубликованную версию.':hints[l.status])}</p><span className="owner-updated">{t('Обновлено:')} {dateLabel(l.updatedAt)}</span></div>
+      <Link className="owner-photo" href={`/dashboard/${l._id}`} aria-label={`${t('Редактировать')}: ${l.draft.title.trim()||t('Черновик без названия')}`}>{l.draft.photos[0]?<img src={l.draft.photos[0].url} alt=""/>:<ImageIcon size={30}/>}</Link>
+      <div className="owner-card-info"><span className={`status ${l.status}`}>{t(l.published&&l.status==='draft'?'Есть неопубликованные изменения':statusLabels[l.status])}</span><h2><Link href={`/dashboard/${l._id}`}>{l.draft.title.trim()||t('Черновик без названия')}</Link></h2><p className="owner-address"><MapPin size={15}/>{l.draft.address.trim()||t('Адрес пока не указан')}</p><p>{t(l.published&&l.status!=='published'?'Посетители видят ранее опубликованную версию.':hints[l.status])}</p><span className="owner-updated">{t('Обновлено:')} {dateLabel(l.updatedAt)}</span></div>
      </div>
      {l.feedback&&<div className="notice warning"><strong>{t('Комментарий модератора:')}</strong> {l.feedback}</div>}
      {configured&&needsPayment(l)&&l.status!=='archived'&&<p className="owner-next-step">{t('Перед первой публикацией заполните карточку и оплатите размещение.')}</p>}

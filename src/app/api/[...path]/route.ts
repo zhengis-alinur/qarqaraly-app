@@ -10,7 +10,7 @@ import { z } from 'zod';
 import { db } from '@/lib/db';
 import { requireUser, session, limit, hash, errorStatus } from '@/lib/auth';
 import { normalizePhone, sendPhoneCode, verifyPhoneCode, phoneFromToken } from '@/lib/phone';
-import { listingSchema, articleSchema } from '@/lib/validation';
+import { listingSchema, listingDraftSchema, articleSchema } from '@/lib/validation';
 import { applyCategoryRules } from '@/lib/categories';
 import { payment as paymentConfig } from '@/lib/payment';
 import { notifyTelegram, answerCallback, editMessage, type Button } from '@/lib/notify';
@@ -42,7 +42,7 @@ async function telegramWebhook(req:NextRequest) {
   const valid=listingSchema.safeParse(listing.draft);
   if(!valid.success) answer='Карточка не проходит проверку — откройте админку';
   else {
-   const result=await listings.updateOne({_id:listing._id,revision:listing.revision},{$set:{approvedAt:listing.approvedAt||now,published:listing.draft,status:'published',feedback:'',updatedAt:now},$inc:{revision:1}});
+   const result=await listings.updateOne({_id:listing._id,revision:listing.revision},{$set:{approvedAt:listing.approvedAt||now,published:applyCategoryRules(valid.data),status:'published',feedback:'',updatedAt:now},$inc:{revision:1}});
    if(!result.matchedCount) answer='Карточка изменилась, обновите и повторите';
    else {answer='Опубликовано';outcome='✅ Опубликовано';}
   }
@@ -146,17 +146,19 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
   }
   const user=await requireUser();
   if(parts[0]==='listings') {
-   await limit(`listing:${user._id}`,100,3600);
-   const id=parts[1],action=parts[2]||'save';const existing=id&&id!=='new'?await listings.findOne({_id:id}):null;
-   if(id!=='new'&&(!existing||(existing.ownerId!==user._id&&user.role!=='admin')))return fail('Объект не найден',404);
+   const id=parts[1],action=parts[2]||'save';
+   await limit(`${action==='save'?'draft':'listing'}:${user._id}`,action==='save'?120:100,action==='save'?60:3600);
+   const draftId=id==='new'&&action==='save'&&body.draftId?z.uuid().parse(body.draftId):undefined;
+   const existing=id&&id!=='new'?await listings.findOne({_id:id}):draftId?await listings.findOne({_id:draftId}):null;
+   if((id!=='new'&&!existing)||(existing&&existing.ownerId!==user._id&&user.role!=='admin'))return fail('Объект не найден',404);
    const now=new Date().toISOString();
    if(action==='save') {
-    // Поля, которых у категории нет, не должны доезжать до каталога, даже если их прислал старый клиент.
-    const data=applyCategoryRules(listingSchema.parse(body.data));const tax=await database.collection<Taxonomy>('taxonomy').find().toArray();
-    if(!tax.some(t=>t.kind==='category'&&t._id===data.category)||data.amenities.some(a=>!tax.some(t=>t.kind==='amenity'&&t.name===a)))return fail('Проверьте категорию и удобства');
+    const data=listingDraftSchema.parse(body.data);const tax=await database.collection<Taxonomy>('taxonomy').find().toArray();
+    if((data.category&&!tax.some(t=>t.kind==='category'&&t._id===data.category))||data.amenities.some(a=>!tax.some(t=>t.kind==='amenity'&&t.name===a)))return fail('Проверьте категорию и удобства');
     for(const photo of data.photos)if(!await database.collection('photos').findOne({url:photo.url,...(user.role==='admin'?{}:{ownerId:user._id})})&&!existing?.draft.photos.some(p=>p.url===photo.url))return fail('Недоступное фото',403);
-    if(existing){const result=await listings.updateOne({_id:existing._id,revision:body.revision},{$set:{draft:data,status:'draft',feedback:'',updatedAt:now},$inc:{revision:1}});if(!result.matchedCount)return fail('Карточка уже изменена. Обновите страницу.',409);return ok({id:existing._id,revision:existing.revision+1});}
-    const newId=randomUUID();await listings.insertOne({_id:newId,slug:`place-${newId}`,ownerId:user._id,draft:data,published:null,status:'draft',feedback:'',confirmedAt:null,createdAt:now,updatedAt:now,revision:1});return ok({id:newId,revision:1});
+    if(existing&&JSON.stringify(existing.draft)===JSON.stringify(data))return ok({id:existing._id,revision:existing.revision});
+    if(existing){const result=await listings.updateOne({_id:existing._id,revision:body.revision},{$set:{draft:data,status:'draft',feedback:'',updatedAt:now},$inc:{revision:1}});if(!result.matchedCount)return NextResponse.json({error:'Карточка уже изменена. Обновите страницу.',id:existing._id},{status:409});return ok({id:existing._id,revision:existing.revision+1});}
+    const newId=draftId||randomUUID();await listings.insertOne({_id:newId,slug:`place-${newId}`,ownerId:user._id,draft:data,published:null,status:'draft',feedback:'',confirmedAt:null,createdAt:now,updatedAt:now,revision:1});return ok({id:newId,revision:1});
    }
    if(!existing)return fail('Объект не найден',404);
    const match={_id:existing._id,revision:body.revision};
@@ -170,7 +172,7 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
     if(!user.verified)return fail('Подтвердите email или номер телефона перед отправкой на проверку');
     const configured=Boolean(paymentConfig().qr||paymentConfig().link);
     if(configured&&needsPayment(existing)&&user.role!=='admin')return fail('Сначала пройдите шаг оплаты и нажмите «Я оплатил»');
-    listingSchema.parse(existing.draft);update={...update,status:'pending',feedback:''};
+    const draft=applyCategoryRules(listingSchema.parse(existing.draft));update={...update,draft,status:'pending',feedback:''};
    }
    else if(action==='archive')update={...update,status:'archived',published:null,...(isApproved(existing)?{approvedAt:existing.approvedAt||now}:{})};
    else if(action==='confirm'){if(!existing.published)return fail('Сначала опубликуйте объект');update={confirmedAt:now};}
@@ -179,7 +181,7 @@ async function handle(req:NextRequest,{params}:{params:Promise<{path:string[]}>}
     if(action==='owner') {const contact=z.string().trim().min(3).parse(body.email);const owner=await users.findOne(contact.includes('@')?{email:z.email().parse(contact).toLowerCase()}:{phone:normalizePhone(contact)});if(!owner)return fail('Пользователь не найден');update={...update,ownerId:owner._id};}
     else {
      if(action==='approve'&&existing.status!=='pending')return fail('Карточка не находится на проверке');
-     if(action==='approve'){listingSchema.parse(existing.draft);update={...update,approvedAt:existing.approvedAt||now,published:existing.draft,status:'published',feedback:''};}
+     if(action==='approve'){const published=applyCategoryRules(listingSchema.parse(existing.draft));update={...update,approvedAt:existing.approvedAt||now,published,status:'published',feedback:''};}
      else update={...update,status:'changes',feedback:z.string().trim().min(3).max(2000).parse(body.feedback)};
     }
    }else return fail('Неизвестное действие');
