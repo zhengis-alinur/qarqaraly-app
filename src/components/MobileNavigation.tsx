@@ -41,7 +41,6 @@ export default function MobileNavigation({ signedIn, admin }: { signedIn: boolea
     { href: '/sights', label: 'Что посмотреть', icon: Mountain },
     { href: '/news', label: 'Новости', icon: Newspaper },
     { href: signedIn ? (admin ? '/admin' : '/dashboard') : '/auth/login', label: signedIn ? (admin ? 'Администрирование' : 'Мой кабинет') : 'Войти', icon: UserRound },
-    { href: '/dashboard/new', label: 'Разместить бизнес', icon: Plus },
     { href: '/privacy', label: 'Конфиденциальность', icon: ShieldCheck },
   ];
 
@@ -64,6 +63,10 @@ export default function MobileNavigation({ signedIn, admin }: { signedIn: boolea
           <span>{t(label)}</span><ChevronRight size={18} aria-hidden />
         </Link>)}
       </nav>
+      <Link href="/dashboard/new" className="button mobile-more-business" onClick={() => setOpen(false)}
+        aria-current={pathname === '/dashboard/new' ? 'page' : undefined}>
+        <Plus size={21} aria-hidden /><span>{t('Разместить бизнес')}</span>
+      </Link>
       <p className="mobile-more-note">Qarqaraly · {t('Маленькое путешествие. Большое вдохновение.')}</p>
     </MobileSheet>
   </>;

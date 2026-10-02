@@ -44,6 +44,8 @@
   .mobile-more-links>a>span:nth-child(2) { flex:1; }
   .mobile-more-icon { width:42px; height:42px; display:grid; place-items:center; border-radius:13px; background:#eef2e5; color:var(--green); flex-shrink:0; }
   .mobile-more-links>a[aria-current="page"] { color:var(--green); }
+  .mobile-sheet .mobile-more-business { width:100%; min-height:52px; margin-top:20px; }
+  .mobile-more-business svg { flex-shrink:0; }
   .mobile-more-note { font-size:11px; color:#6e7b66; margin:20px 0 0; }
 
   .page { padding-block:22px 28px; min-height:0; }
